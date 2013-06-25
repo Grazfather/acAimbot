@@ -13,6 +13,12 @@ void readPlayerData(HANDLE, player*, char);
 int FindClosestEnemyIndex(player*, player**);
 void AimAtTarget(player*);
 int SelectEnemy(player**);
+#define DEBUG
+#ifdef DEBUG
+ #define DEBUG_PRINT(...) do{printf("DEBUG:"__VA_ARGS__);}while(0);
+#else
+ #define DEBUG_PRINT(...) do{}while(0);
+#endif
 
 int main()
 {
