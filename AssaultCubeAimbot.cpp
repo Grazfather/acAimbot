@@ -1,17 +1,14 @@
 #include <stdio.h>
 #include <windows.h>
+#include <math.h>
 #include "PlayerInfo.h"
 
 #define PROCESS_NAME 	"AssaultCube"
 
 #define PLAYER_BASE			0x4E4DBC
 #define ENEMIES_BASE		0x4E4E08
-#define PLAYER_DATA_OFFSET	0x30
 #define MAX_ENEMIES			4 // Eventually higher
 
-int FindClosestEnemyIndex(player*, player**);
-void AimAtTarget(player*);
-int SelectEnemy(player**);
 #define DEBUG
 #ifdef DEBUG
  #define DEBUG_PRINT(...) do{printf("DEBUG:"__VA_ARGS__);}while(0);
@@ -19,9 +16,16 @@ int SelectEnemy(player**);
  #define DEBUG_PRINT(...) do{}while(0);
 #endif
 
+#define PI 3.14159265
+
 void readPlayerData(HANDLE, player*);
 void writePlayerData(HANDLE, player*, void*, size_t, int);
 void printPlayerData(const player*);
+int FindClosestEnemyIndex(player*, player[]);
+float distanceBetweenPlayers(player*, player*);
+void AimAtTarget(player*, player*);
+
+HANDLE hProcess;
 
 int main()
 {
@@ -58,9 +62,6 @@ int main()
 	int currentTarget = -1;
 
 	DWORD playerBase;
-	DWORD enemyBase1;
-	DWORD enemyBase2;
-	HANDLE hProcess;
 	DWORD processId;
 	HWND hWnd = FindWindow(0, PROCESS_NAME);
 	if (!hWnd) {
@@ -83,26 +84,31 @@ int main()
 	while( true ) {
 		system("cls");
 
+		currentTarget = -1;
 		readPlayerData(hProcess, &mainPlayer);
 
 		printf("Player: ");
 		printPlayerData(&mainPlayer);
 		for( i = 0; i < MAX_ENEMIES; i++ ) {
 			readPlayerData(hProcess, &enemyPlayer[i]);
+			printf("Enemy %d: ", i);
+			printPlayerData(&enemyPlayer[i]);
+			printf("Distance: %f\n", distanceBetweenPlayers(&mainPlayer, &enemyPlayer[i]));
 		}
 
-		//WriteProcessMemory(hProcess, (void*)(enemyBase2 + PLAYER_DATA_OFFSET + mainPlayerOffsets.ypos), &stuck, sizeof(int), NULL);
-		if (GetKeyState(VK_RBUTTON)) {
+		currentTarget = FindClosestEnemyIndex(&mainPlayer, enemyPlayer);
+		DEBUG_PRINT("Key state: 0x%4.4X\n", GetKeyState(VK_RBUTTON));
+		if (GetKeyState(VK_RBUTTON) & 0x8000) {
 			aiming = true;
-			// currentTarget = SelectEnemy();
-			// AimAtTarget(enemyPlayer[currentTarget]);
+			if (currentTarget >= 0)
+				AimAtTarget(&mainPlayer, &enemyPlayer[currentTarget]);
 		} else {
 			aiming = false;
 			currentTarget = -1;
 		}
 
-		// TODO: Remove delay for real play
-		Sleep(200);
+		// TODO: Keep track of time elapsed and try to instead aim a consistent number of times per second.
+		Sleep(50);
 	}
 }
 
@@ -148,24 +154,90 @@ void printPlayerData(const player *player)
 	printf("hp:%d, xpos:%f, ypos:%f, zpos:%f\n", player->data.hp, player->data.xpos, player->data.ypos, player->data.zpos);
 }
 
-void AimAtTarget(player* enemy)
+/**
+  * Calculate the yMouse and xMouse required to aim at the specified enemy.
+  * Also write it to the game process.
+  */
+void AimAtTarget(player* me, player* enemy)
 {
-	// Calculate pitch and yaw to aim at enemy.data.xyz
+	float xMouse;
+	float yMouse;
+	float dx, dy, dz;
+	float a, b, c;
+
+#ifdef DEBUG
+	DEBUG_PRINT("Aiming at: \n");
+	printPlayerData(enemy);
+#endif
+
+	// Need to find what cartesian quadrant we are in.
+	/*
+			 |0*
+	   (-,-) | (-,+)
+	     D   |   A
+	 ----------------->z
+       (-,+) | (+,+)
+	     C   |   B
+	         v+x
+	*/
+	dx = enemy->data.xpos - me->data.xpos;
+	dy = enemy->data.ypos - me->data.ypos;
+	// TODO: Aim slightly lower on the enemy (instead of the head) to improve
+	// accuracy.
+	dz = enemy->data.zpos - me->data.zpos;
+
+	if (dx < 0.0 && dz > 0.0) { // A
+		xMouse = (atan(dz/-dx) * 180 / PI);
+	} else if (dx < 0.0 && dz < 0.0) { // D
+		xMouse = 360 - (atan(-dx/-dz) * 180 / PI);
+	} else if (dx > 0.0 && dz < 0.0) { // C
+		xMouse = 180 + (atan(-dz/dx) * 180 / PI);
+	} else if (dx > 0.0 && dz > 0.0) { // B
+		xMouse = 90 + (atan(dx/dz) * 180 / PI);
+	}
+
+	yMouse = atan((dy)/sqrt(fabs(dz*dz + dx*dx))) * 180/PI;
+	DEBUG_PRINT("xMouse: %f yMouse: %f\n", xMouse, yMouse);
 	// Set the Ymouse and Xmouse
+	if (xMouse == xMouse && yMouse == yMouse) {
+		writePlayerData(hProcess, me, &xMouse, sizeof(float), me->offsets.xMouse);
+		writePlayerData(hProcess, me, &yMouse, sizeof(float), me->offsets.yMouse);
+	} else {
+		// We've done bad math.
+		printf("Error! %f %f\n\n", xMouse, yMouse);
+		exit(0);
+	}
 }
 
-int FindClosestEnemyIndex(player* me, player** enemies)
+float distanceBetween(float x1, float y1, float z1, float x2, float y2, float z2)
 {
+	return sqrt((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2)+ (z1-z2)*(z1-z2));
+}
+
+float distanceBetweenPlayers(player* p1, player* p2)
+{
+	return distanceBetween(p1->data.xpos, p1->data.ypos, p1->data.zpos,
+							p2->data.xpos, p2->data.ypos, p2->data.zpos);
+}
+
+int FindClosestEnemyIndex(player* me, player enemies[])
+{
+	// TODO: Find max distance they're worth aiming from.
 	float min = 100.0;
-	// TODO: Find min threshold where they're not worth aiming at
+	float distance;
 	int nearestEnemy = -1;
-	/*
-	for each enemy 'currentEnemy'
-		if enemy alive
-			calc distance between self and enemy
-			if distance < min
+	int i;
+
+	for( i = 0; i < MAX_ENEMIES; i++ ) {
+		if (enemies[i].data.hp > 0 && enemies[i].data.hp <= 100) {
+			distance = distanceBetweenPlayers(me, &enemies[i]);
+			if (distance < min) {
+				nearestEnemy = i;
 				min = distance;
-				nearestEnemy = currentEnemy;
-	*/
+			}
+		}
+	}
+	DEBUG_PRINT("Nearest enemy '%d' is '%f' units away.\n", nearestEnemy, min);
+
 	return nearestEnemy;
 }
