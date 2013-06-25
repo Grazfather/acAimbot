@@ -9,7 +9,6 @@
 #define PLAYER_DATA_OFFSET	0x30
 #define MAX_ENEMIES			4 // Eventually higher
 
-void readPlayerData(HANDLE, player*, char);
 int FindClosestEnemyIndex(player*, player**);
 void AimAtTarget(player*);
 int SelectEnemy(player**);
@@ -19,6 +18,10 @@ int SelectEnemy(player**);
 #else
  #define DEBUG_PRINT(...) do{}while(0);
 #endif
+
+void readPlayerData(HANDLE, player*);
+void writePlayerData(HANDLE, player*, void*, size_t, int);
+void printPlayerData(const player*);
 
 int main()
 {
@@ -79,9 +82,13 @@ int main()
 
 	while( true ) {
 		system("cls");
-		readPlayerData(hProcess, &mainPlayer, '\0');
+
+		readPlayerData(hProcess, &mainPlayer);
+
+		printf("Player: ");
+		printPlayerData(&mainPlayer);
 		for( i = 0; i < MAX_ENEMIES; i++ ) {
-			readPlayerData(hProcess, &enemyPlayer[i], '1'+i);
+			readPlayerData(hProcess, &enemyPlayer[i]);
 		}
 
 		//WriteProcessMemory(hProcess, (void*)(enemyBase2 + PLAYER_DATA_OFFSET + mainPlayerOffsets.ypos), &stuck, sizeof(int), NULL);
@@ -102,19 +109,15 @@ int main()
 /**
   * Read all player data into struct
   */
-void readPlayerData(HANDLE hProcess, player *player, char note)
+void readPlayerData(HANDLE hProcess, player *player)
 {
 	int i;
 	DWORD playerBase;
 
 	ReadProcessMemory(hProcess, (void*)player->baseAddress, &playerBase, sizeof(int), NULL);
-	printf("%c Player base: [0x%X] = 0x%X, ", note, player->baseAddress, playerBase);
 	for( i = 0; i < player->numJumps; i++ ) {
-		printf("[0x%X+0x%X] =", playerBase, player->jumps[i]);
 		ReadProcessMemory(hProcess, (void*)(playerBase + player->jumps[i]), &playerBase, sizeof(int), NULL);
-		printf("0x%X, ", playerBase);
 	}
-	printf("\n");
 
 	ReadProcessMemory(hProcess, (void*)(playerBase + player->offsets.xMouse), &player->data.xMouse, sizeof(float), NULL);
 	ReadProcessMemory(hProcess, (void*)(playerBase + player->offsets.yMouse), &player->data.yMouse, sizeof(float), NULL);
@@ -122,21 +125,27 @@ void readPlayerData(HANDLE hProcess, player *player, char note)
 	ReadProcessMemory(hProcess, (void*)(playerBase + player->offsets.ypos), &player->data.ypos, sizeof(float), NULL);
 	ReadProcessMemory(hProcess, (void*)(playerBase + player->offsets.zpos), &player->data.zpos, sizeof(float), NULL);
 	ReadProcessMemory(hProcess, (void*)(playerBase + player->offsets.hp), &player->data.hp, sizeof(int), NULL);
-	printf("hp:%d, xpos:%f, ypos:%f, zpos:%f xM:%f yM:%f\n", player->data.hp, player->data.xpos, player->data.ypos, player->data.zpos, player->data.xMouse, player->data.yMouse);
 }
 
-int SelectEnemy(player** enemies)
+/**
+  * Write data to a player's struct at the specified offset.
+  */
+void writePlayerData(HANDLE hProcess, player *player, void *data, size_t size, int offset)
 {
-	int targetIndex = -1;
 	int i;
-	// TODO: Add functionality to lock on to an enemy
-	// if selecting a specific enemy
-	//   if enemy hp > 0
-	//     return its index
-	// Find nearest living enemy
-	// return its index
+	DWORD playerBase;
 
-	return targetIndex;
+	ReadProcessMemory(hProcess, (void*)player->baseAddress, &playerBase, sizeof(int), NULL);
+	for( i = 0; i < player->numJumps; i++ ) {
+		ReadProcessMemory(hProcess, (void*)(playerBase + player->jumps[i]), &playerBase, sizeof(int), NULL);
+	}
+
+	WriteProcessMemory(hProcess, (void*)(playerBase + offset), data, size, NULL);
+}
+
+void printPlayerData(const player *player)
+{
+	printf("hp:%d, xpos:%f, ypos:%f, zpos:%f\n", player->data.hp, player->data.xpos, player->data.ypos, player->data.zpos);
 }
 
 void AimAtTarget(player* enemy)
