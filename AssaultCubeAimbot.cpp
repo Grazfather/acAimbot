@@ -3,11 +3,11 @@
 #include <math.h>
 #include "PlayerInfo.h"
 
-#define PROCESS_NAME 	"AssaultCube"
+#define PROCESS_NAME		"AssaultCube"
 
-#define PLAYER_BASE			0x4E4DBC
+#define PLAYER_BASE		0x4E4DBC
 #define ENEMIES_BASE		0x4E4E08
-#define MAX_ENEMIES			4 // Eventually higher
+#define MAX_ENEMIES		4 // Eventually higher
 
 #define DEBUG
 #ifdef DEBUG
@@ -35,7 +35,7 @@ int main()
 	// TODO: Somehow distinguish friend from foe
 	player enemyPlayer[4];
 	// Offsets into player data to find hp, pos, etc.
-	//					   zpos, xpos, ypos, xM,   yM,   hp
+	//		       zpos, xpos, ypos, xM,   yM,   hp
 	mainPlayer.baseAddress = PLAYER_BASE;
 	mainPlayer.offsets = { 0x34, 0x38, 0x3C, 0x40, 0x44, 0xF4 };
 	mainPlayer.numJumps = 0;
@@ -57,11 +57,8 @@ int main()
 	enemyPlayer[3].jumps = (int[]){ 0x10 };
 
 	bool gameFound = false;
-	bool aiming = false;
-	bool focusingOnEnemy = false;
 	int currentTarget = -1;
 
-	DWORD playerBase;
 	DWORD processId;
 	HWND hWnd = FindWindow(0, PROCESS_NAME);
 	if (!hWnd) {
@@ -99,11 +96,9 @@ int main()
 		currentTarget = FindClosestEnemyIndex(&mainPlayer, enemyPlayer);
 		DEBUG_PRINT("Key state: 0x%4.4X\n", GetKeyState(VK_RBUTTON));
 		if (GetKeyState(VK_RBUTTON) & 0x8000) {
-			aiming = true;
 			if (currentTarget >= 0)
 				AimAtTarget(&mainPlayer, &enemyPlayer[currentTarget]);
 		} else {
-			aiming = false;
 			currentTarget = -1;
 		}
 
@@ -163,7 +158,6 @@ void AimAtTarget(player* me, player* enemy)
 	float xMouse;
 	float yMouse;
 	float dx, dy, dz;
-	float a, b, c;
 
 #ifdef DEBUG
 	DEBUG_PRINT("Aiming at: \n");
@@ -197,14 +191,17 @@ void AimAtTarget(player* me, player* enemy)
 	}
 
 	yMouse = atan((dy)/sqrt(fabs(dz*dz + dx*dx))) * 180/PI;
-	DEBUG_PRINT("xMouse: %f yMouse: %f\n", xMouse, yMouse);
 	// Set the Ymouse and Xmouse
 	if (xMouse == xMouse && yMouse == yMouse) {
 		writePlayerData(hProcess, me, &xMouse, sizeof(float), me->offsets.xMouse);
 		writePlayerData(hProcess, me, &yMouse, sizeof(float), me->offsets.yMouse);
+		DEBUG_PRINT("xMouse: %f yMouse: %f\n", xMouse, yMouse);
 	} else {
 		// We've done bad math.
-		printf("Error! %f %f\n\n", xMouse, yMouse);
+		fprintf(stderr, "Error! %f %f\n\n", xMouse, yMouse);
+		fprintf(stderr, "dx %f dy %f dz %f\n", dx, dy, dz);
+		fprintf(stderr, "dz^2 %f dx^2 %f\n", dz*dz, dx*dx);
+		fprintf(stderr, "sqrt(fabs(dz*dz + dx*dx)) %f\n", sqrt(fabs(dz*dz + dx*dx)));
 		exit(0);
 	}
 }
