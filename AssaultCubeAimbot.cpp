@@ -18,8 +18,9 @@
 
 #define PI 3.14159265
 
-void readPlayerData(HANDLE, player*);
-void writePlayerData(HANDLE, player*, void*, size_t, int);
+HANDLE openGameProcess(char*);
+void readPlayerData(player*);
+void writePlayerData(player*, void*, size_t, int);
 void printPlayerData(const player*);
 int FindClosestEnemyIndex(player*, player[]);
 float distanceBetweenPlayers(player*, player*);
@@ -56,18 +57,63 @@ int main()
 	enemyPlayer[3].numJumps = 1;
 	enemyPlayer[3].jumps = (int[]){ 0x10 };
 
-	bool gameFound = false;
 	int currentTarget = -1;
-
-	DWORD processId;
-	HWND hWnd = FindWindow(0, PROCESS_NAME);
-	if (!hWnd) {
-		fprintf(stderr, "Error: cannot find window.\n");
+	hProcess = openGameProcess(PROCESS_NAME);
+	if (!hProcess) {
 		return -1;
 	}
 
-	do {
+	// Main loop
+	while( true ) {
 		system("cls");
+
+		currentTarget = -1;
+		readPlayerData(&mainPlayer);
+
+		// Read all player info
+		printf("Player: ");
+		printPlayerData(&mainPlayer);
+		for( i = 0; i < MAX_ENEMIES; i++ ) {
+			readPlayerData(&enemyPlayer[i]);
+			printf("Enemy %d: ", i);
+			printPlayerData(&enemyPlayer[i]);
+			printf("Distance: %f\n", distanceBetweenPlayers(&mainPlayer, &enemyPlayer[i]));
+		}
+
+		// Find the closest living enemy to choose our target
+		// TODO: Use more than just distance to select a target
+		currentTarget = FindClosestEnemyIndex(&mainPlayer, enemyPlayer);
+
+		// If we are holding the right mouse button and we have a valid
+		// target, aim at it.
+		DEBUG_PRINT("Key state: 0x%4.4X\n", GetKeyState(VK_RBUTTON));
+		if (GetKeyState(VK_RBUTTON) & 0x8000) {
+			if (currentTarget >= 0)
+				AimAtTarget(&mainPlayer, &enemyPlayer[currentTarget]);
+		}
+
+		// TODO: Keep track of time elapsed and try to instead aim a
+		// consistent number of times per second.
+		Sleep(50);
+	}
+}
+
+HANDLE openGameProcess(char *processName)
+{
+	DWORD processId;
+	HANDLE hProcess;
+	bool gameFound = false;
+	HWND hWnd;
+
+	do {
+		Sleep(100);
+		system("cls");
+		hWnd = FindWindow(0, processName);
+		if (!hWnd) {
+			fprintf(stderr, "Error: cannot find window.\n");
+			continue;
+		}
+		fprintf(stderr, "Window found. Opening process.\n");
 		GetWindowThreadProcessId(hWnd, &processId);
 		hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, processId);
 		if (!hProcess) {
@@ -75,42 +121,15 @@ int main()
 		} else {
 			gameFound = true;
 		}
-		Sleep(100);
-	} while(!gameFound);
+	} while( !gameFound );
 
-	while( true ) {
-		system("cls");
-
-		currentTarget = -1;
-		readPlayerData(hProcess, &mainPlayer);
-
-		printf("Player: ");
-		printPlayerData(&mainPlayer);
-		for( i = 0; i < MAX_ENEMIES; i++ ) {
-			readPlayerData(hProcess, &enemyPlayer[i]);
-			printf("Enemy %d: ", i);
-			printPlayerData(&enemyPlayer[i]);
-			printf("Distance: %f\n", distanceBetweenPlayers(&mainPlayer, &enemyPlayer[i]));
-		}
-
-		currentTarget = FindClosestEnemyIndex(&mainPlayer, enemyPlayer);
-		DEBUG_PRINT("Key state: 0x%4.4X\n", GetKeyState(VK_RBUTTON));
-		if (GetKeyState(VK_RBUTTON) & 0x8000) {
-			if (currentTarget >= 0)
-				AimAtTarget(&mainPlayer, &enemyPlayer[currentTarget]);
-		} else {
-			currentTarget = -1;
-		}
-
-		// TODO: Keep track of time elapsed and try to instead aim a consistent number of times per second.
-		Sleep(50);
-	}
+	return hProcess;
 }
 
 /**
   * Read all player data into struct
   */
-void readPlayerData(HANDLE hProcess, player *player)
+void readPlayerData(player *player)
 {
 	int i;
 	DWORD playerBase;
@@ -131,7 +150,7 @@ void readPlayerData(HANDLE hProcess, player *player)
 /**
   * Write data to a player's struct at the specified offset.
   */
-void writePlayerData(HANDLE hProcess, player *player, void *data, size_t size, int offset)
+void writePlayerData(player *player, void *data, size_t size, int offset)
 {
 	int i;
 	DWORD playerBase;
@@ -193,8 +212,8 @@ void AimAtTarget(player* me, player* enemy)
 	yMouse = atan((dy)/sqrt(fabs(dz*dz + dx*dx))) * 180/PI;
 	// Set the Ymouse and Xmouse
 	if (xMouse == xMouse && yMouse == yMouse) {
-		writePlayerData(hProcess, me, &xMouse, sizeof(float), me->offsets.xMouse);
-		writePlayerData(hProcess, me, &yMouse, sizeof(float), me->offsets.yMouse);
+		writePlayerData(me, &xMouse, sizeof(float), me->offsets.xMouse);
+		writePlayerData(me, &yMouse, sizeof(float), me->offsets.yMouse);
 		DEBUG_PRINT("xMouse: %f yMouse: %f\n", xMouse, yMouse);
 	} else {
 		// We've done bad math.
