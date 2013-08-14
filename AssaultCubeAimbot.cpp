@@ -9,6 +9,8 @@
 #define ENEMIES_BASE		0x4E4E08
 #define MAX_ENEMIES		4 // Eventually higher
 
+#define MIN_DISTANCE		100.0
+
 #define DEBUG
 #ifdef DEBUG
  #define DEBUG_PRINT(...) do{printf("DEBUG:"__VA_ARGS__);}while(0);
@@ -98,6 +100,9 @@ int main()
 	}
 }
 
+/**
+  * Find and open process 'processName' and return the HANDLE
+  */
 HANDLE openGameProcess(char *processName)
 {
 	DWORD processId;
@@ -169,8 +174,8 @@ void printPlayerData(const player *player)
 }
 
 /**
-  * Calculate the yMouse and xMouse required to aim at the specified enemy.
-  * Also write it to the game process.
+  * Calculate the yMouse and xMouse required to aim at the specified enemy
+  * and write it to the game process memory.
   */
 void AimAtTarget(player* me, player* enemy)
 {
@@ -185,13 +190,13 @@ void AimAtTarget(player* me, player* enemy)
 
 	// Need to find what cartesian quadrant we are in.
 	/*
-			 |0*
+	         |0*
 	   (-,-) | (-,+)
 	     D   |   A
 	 ----------------->z
-       (-,+) | (+,+)
+	   (-,+) | (+,+)
 	     C   |   B
-	         v+x
+	         v x
 	*/
 	dx = enemy->data.xpos - me->data.xpos;
 	dy = enemy->data.ypos - me->data.ypos;
@@ -233,13 +238,12 @@ float distanceBetween(float x1, float y1, float z1, float x2, float y2, float z2
 float distanceBetweenPlayers(player* p1, player* p2)
 {
 	return distanceBetween(p1->data.xpos, p1->data.ypos, p1->data.zpos,
-							p2->data.xpos, p2->data.ypos, p2->data.zpos);
+			       p2->data.xpos, p2->data.ypos, p2->data.zpos);
 }
 
 int FindClosestEnemyIndex(player* me, player enemies[])
 {
-	// TODO: Find max distance they're worth aiming from.
-	float min = 100.0;
+	float min = MIN_DISTANCE; 
 	float distance;
 	int nearestEnemy = -1;
 	int i;
@@ -257,3 +261,4 @@ int FindClosestEnemyIndex(player* me, player enemies[])
 
 	return nearestEnemy;
 }
+
